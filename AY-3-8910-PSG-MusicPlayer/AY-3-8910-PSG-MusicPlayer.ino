@@ -132,6 +132,8 @@ void setupClockForAYChip() {
 
 // Clear Timer on Compare 
 // interrupt on "Timer/Counter1 Compare Match A"
+// 16000000 (16MHz) / 256 prescaler = 62500ms , 62500ms / 1250 counts = 50ms
+// 1000ms / 50ms = 20ms
 void setupProcessLogicTimer() {
   cli();                            // Disable interrupts while setting up
   TCCR1A = 0;                       // Timer/Counter Control register
@@ -140,7 +142,7 @@ void setupProcessLogicTimer() {
   TIMSK1 = _BV(OCIE1A);             // Enable timer compare interrupt
   OCR1A = 1250;  	                  // compared against TCNT1 if same ISR is called
   sei();                            // enable interrupt
-} // give about 20 ms ????  need to check
+} 
 
 void countPlayableFiles() {
  // SdFile* file = (SdFile*)playBuf;  // buffers not currently in use, so putting it to good use :)
