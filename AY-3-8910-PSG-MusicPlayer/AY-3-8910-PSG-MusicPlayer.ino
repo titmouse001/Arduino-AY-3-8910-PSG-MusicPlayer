@@ -249,6 +249,7 @@ void loadNextByte() {
   ADVANCE_LOAD_BUFFER
 }
 
+// Bypass header information, we can't make use of the extra playback features.
 void advancePastHeader() {
   circularBufferLoadIndex = circularBufferReadIndex = 0;
   while (m_fp.available()) {
@@ -257,12 +258,15 @@ void advancePastHeader() {
   }
 }
 
+// Reset AY chip to stop sound output
+// Reset line needs to go High->Low->High for AY38910/12
+// Reset pulse width must be 500ns (min)
 void resetAY() {
   setAYMode(INACTIVE);
-  digitalWrite(pinReset, LOW);
-  delay(20);
+  digitalWrite(pinReset, LOW); // just assume it starts high - we only care about the low edges
+  delay(1);  // to be safe
   digitalWrite(pinReset, HIGH);
-  delay(20);
+  delay(1);
 }
 
 // PORTB maps to Arduino digital pins 8 to 13 (PB0 to PB5)
