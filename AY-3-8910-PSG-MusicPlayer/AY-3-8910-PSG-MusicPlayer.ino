@@ -14,11 +14,22 @@
 #include "SSD1306AsciiAvrI2c.h"
 #include "fudgefont.h"  // Based on the Adafruit5x7 font, with '!' to '(' changed to work as a VU BAR (8 chars)
 
-// **********************************************
-//#define BUFFER_SIZE (64)  //  *** ATmega168 (1K) ***  Smaller buffer/non optimized - limiting size as we need all the memory we can get.
-#define BUFFER_SIZE (256)   //  *** ATmega328 (2K) ***  Allows optimised byte counters which can safely wrap back to zero.
-byte playBuf[BUFFER_SIZE];  // 256 MAX 
-// **********************************************
+// *********************************************************************
+// *********************************************************************
+// *********************************************************************
+// Pick one of thse two options for the BUFFER_SIZE to match the ATmega 
+// you are compiling for
+//
+// OPTION 1:
+#define BUFFER_SIZE (256)  // ATmega328(2K) allows optimised counters
+// OPTION 2:
+//#define BUFFER_SIZE (64)  // ATmega168(1K) code uses a smaller buffer 
+// ********************************************************************
+// ********************************************************************
+// ********************************************************************
+
+byte playBuf[BUFFER_SIZE];  // PICK ONE OF THE ABOVE BUFFER SIZES
+
 
 //*** Compiler results for a ATmega168 ("cut down" pro mini with JUST 1k, Atmega238P has 2k) ***
 //Sketch uses 12602 bytes (87%) of program storage space. Maximum is 14336 bytes.
@@ -31,8 +42,8 @@ byte playBuf[BUFFER_SIZE];  // 256 MAX
 #define ADVANCE_PLAY_BUFFER  circularBufferReadIndex++; 
 #define ADVANCE_LOAD_BUFFER  circularBufferLoadIndex++; 
 #else 
-#define ADVANCE_PLAY_BUFFER  circularBufferReadIndex++; if (playPos>=BUFFER_SIZE) playPos=0; 
-#define ADVANCE_LOAD_BUFFER  circularBufferLoadIndex++; if (loadPos>=BUFFER_SIZE) loadPos=0; 
+#define ADVANCE_PLAY_BUFFER  circularBufferReadIndex++; if (circularBufferReadIndex>=BUFFER_SIZE) {circularBufferReadIndex=0;} 
+#define ADVANCE_LOAD_BUFFER  circularBufferLoadIndex++; if (circularBufferLoadIndex>=BUFFER_SIZE) {circularBufferLoadIndex=0;}
 #endif
 
 // Byte commands - Incoming data from file
