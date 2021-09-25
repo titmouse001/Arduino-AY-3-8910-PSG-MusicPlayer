@@ -3,10 +3,10 @@
 // Code has been optimised (mainly to save space) and will now fit on a 'ATmega168'
 
 // This code is based on "AY-3-8910 Player Arduino OLED" hosted on PCBWAY (you can find a link to the original code that I've reworked)
-// I ordered 5 PCB's from them, take a look here https://www.pcbway.com/project/shareproject/AY_3_8910_Player_Arduino_OLED.html
+// I ordered 5 PCB's from them (PCB for AY player is already designed, you just order), take a look here https://www.pcbway.com/project/shareproject/AY_3_8910_Player_Arduino_OLED.html
 //
 // Just noticed another sketch on github, https://gist.github.com/anteo/0e5d8867df7568a6523d54e19983d8e0
-// At a guess, looks like the PCBWAY's version by Roman Kubat is a fork of this.
+// At a guess, looks like the PCBWAY's version by Roman Kubat is based of this github version by Anton Argirov.
 
 #include <SPI.h>
 #include "SdFat.h"
