@@ -73,6 +73,32 @@ enum {
   pinCS           // SD card select (CS)
 };
 
+// AY/PSG Registers 
+enum {  
+  PSG_REG_FREQ_A_LO = 0,
+  PSG_REG_FREQ_A_HI,
+  PSG_REG_FREQ_B_LO,
+  PSG_REG_FREQ_B_HI,
+  PSG_REG_FREQ_C_LO,
+  PSG_REG_FREQ_C_HI,
+  
+  PSG_REG_FREQ_NOISE,
+  PSG_REG_IO_MIXER,
+  
+  PSG_REG_LVL_A,
+  PSG_REG_LVL_B,
+  PSG_REG_LVL_C,
+  
+  PSG_REG_FREQ_ENV_LO,
+  PSG_REG_FREQ_ENV_HI,
+  PSG_REG_ENV_SHAPE,
+  
+  PSG_REG_IOA,
+  PSG_REG_IOB,
+
+  PSG_REG_TOTAL
+};
+
 // 128x32 i2c OLED - 0.96".  
 // SDA=A4 ,  SCL=A5
 #define I2C_ADDRESS (0x3C)   // used by oled
@@ -303,44 +329,65 @@ void resetAY() {
   digitalWrite(pinReset, LOW); // just assume it starts high - we only care about the low edges
   delay(1);  // to be safe
   digitalWrite(pinReset, HIGH);
-  delay(1);
+  //delay(1);
 }
 
+// NOTE: BC2 tied to +5v
+// ----------------------------------
+// BDIR   BC2   BC1   PSG FUNCTION
+// ----+-----+-----+-----------------
+// 0      1      0    INACTIVE
+// 0      1      1    READ FROM PSG (not needed)
+// 1      1      0    WRITE TO PSG
+// 1      1      1    LATCH ADDRESS
+// ----------------------------------
+
+// Generate two bus control signals for AY/PSG pins (BDIR and BC1) over the port
 // PORTB maps to Arduino digital pins 8 to 13 (PB0 to PB5)
-// pins (PB6 and PB7) are not available ( 16MHz crytsal is connected with Pin-9 (XTAL2/PB6) and Pin-10 (XTAL1/PB7)
+// pins (PB6 and PB7) are not available ( 16MHz crytsal is connected with XTAL2/PB6 and XTAL1/PB7 )
 void setAYMode(AYMode mode) {
   switch (mode) {
-    case INACTIVE:  PORTB &= _BV(PB7)|_BV(PB6)|_BV(PB5)|_BV(PB4)|_BV(PB3)|_BV(PB2); break;  //B11111100
-    case WRITE:     PORTB |= _BV(PB1); break;             // output: pin 9
-    case LATCH:     PORTB |= _BV(PB1)|_BV(PB0);  break;   // output: pins 8,9
+    case INACTIVE:  PORTB &= _BV(PB7)|_BV(PB6)|_BV(PB5)|_BV(PB4)|_BV(PB3)|_BV(PB2); break;  // (B11111100)
+    case WRITE:     PORTB |= _BV(PB1); break;             // output: pin 9     (B00000010)
+    case LATCH:     PORTB |= _BV(PB1)|_BV(PB0);  break;   // output: pins 8,9  (B00000011)
   }
 }
 
-// Update VU meter & send latching data to AY chip
+//-------------------------------------------------------------------------------------------------
+//  Operation                    Registers       Function
+//--------------------------+---------------+------------------------------------------------------
+// Tone Generator Control        R0 to R5        Program tone periods
+// Noise Generator Control       R6              Program noise period
+// Mixer Control                 R7              Enable tone and/or noise on selected channels
+// Amplitude Control             R8 to R10       Select "fixed" or "envelope-variable" amplitudes
+// Envelope Generator Control    R11 to R13      Program envelope period and select envelope pattern
+//-------------------------------------------------------------------------------------------------
+// Update VU meter & send latching data via 74HC595 to AY chip
+// (74HC595 used as limited amount of pins available on a Arduino pro mini)
 // NOTE: *** Used by interrupt, keep code lightweight ***
-void writeAY( byte port , byte data ) {
-  if (port < 16) {
+void writeAY( byte port , byte control ) {
+  if (port < PSG_REG_TOTAL) {    
+    //setAYMode(INACTIVE);      // will already be inactive at ths point ( here after init or this call)
+    latchOutput(port);          // Send reg addess to the 74HC595
+    setAYMode(LATCH);           // latch AY reg address with 74HC595
+    setAYMode(INACTIVE);
+    latchOutput(control);       // Send control register to the 74HC595
+    setAYMode(WRITE);           // Signal a write
     switch (port) {
-      case 8: volumeChannelA = data*VU_METER_INTERNAL_SCALE; break;   // *2 for scaled maths (VU meter speed)
-      case 9: volumeChannelB = data*VU_METER_INTERNAL_SCALE; break;
-      case 10:volumeChannelC = data*VU_METER_INTERNAL_SCALE; break;         
+      case PSG_REG_LVL_A: volumeChannelA = control*VU_METER_INTERNAL_SCALE; break;   // *2 for scaled maths (VU meter speed)
+      case PSG_REG_LVL_B: volumeChannelB = control*VU_METER_INTERNAL_SCALE; break;
+      case PSG_REG_LVL_C: volumeChannelC = control*VU_METER_INTERNAL_SCALE; break;
+      case PSG_REG_ENV_SHAPE: if (control==255) return;  // Envelope bugfix ???? NOT TESTED
     }  
-        
-    // send data to the 74HC595 chip (limited amount of pins available on a Arduino pro mini)
-    // *** Port data ***
-    setAYMode(INACTIVE);
-    digitalWrite(pinSTCP, LOW);                 // Hold 74HC595 latchPin low for transmit
-    shiftOut(pinDS, pinSHCP, MSBFIRST, port);   // byte data out (inernally one bit at a time) 
-    digitalWrite(pinSTCP, HIGH);                // 74HC595 latch pin high we are done dont listen any more 
-    setAYMode(LATCH);  
-    // *** Command data ***
-    setAYMode(INACTIVE);
-    digitalWrite(pinSTCP, LOW);
-    shiftOut(pinDS, pinSHCP, MSBFIRST, data);
-    digitalWrite(pinSTCP, HIGH);
-    setAYMode(WRITE);
-    setAYMode(INACTIVE);
+    //using above volume block as a hold time (500ns!) after a write before going inactive ????
+    setAYMode(INACTIVE);        // Inactive ready for the next AY latch
   }
+}
+
+void latchOutput(byte value) {
+    digitalWrite(pinSTCP, LOW);                 // Hold 74HC595 latchPin low for transmit
+    shiftOut(pinDS, pinSHCP, MSBFIRST, value);  // send selected registers to 74HC595
+    digitalWrite(pinSTCP, HIGH);                // 74HC595 latch pin high we are done dont listen any more 
 }
 
 // PSG music format (body)
@@ -393,6 +440,7 @@ void playNotes() {
 }
 
 // Timer/Counter1 Compare Match A
+// 20ms
 ISR(TIMER1_COMPA_vect) {
   if (digitalRead(pinNextButton) == LOW) {   
       // Reusing 'interruptCountSkip' here, it's being used as a button press repeat delay.
