@@ -1,5 +1,7 @@
 # Arduino-AY-3-8910-PSG-MusicPlayer
-This sketch plays PSG files via a AY-3-8910 PSG chip which is a 3-voice programmable sound generator (PSG)
+This sketch plays PSG files via a AY-3-8910 PSG chip which is a 3-voice programmable sound generator (PSG).  
+Works on both the ATmega328 or ATmega168 (Arduino Pro Mini microcontroller board)
+
 ## OLED Display With VU Meter
 ![OLED](/AY-3-8910-PSG-MusicPlayer/Pictures_AYPlayerHardware/AY_Player_OLED_disaply.png)  
 (Shows song title, tune number/total tunes, a count down of kilobytes remaining and 3 channel VU meter)
