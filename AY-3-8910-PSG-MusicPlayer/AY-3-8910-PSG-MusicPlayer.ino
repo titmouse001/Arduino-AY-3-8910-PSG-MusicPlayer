@@ -8,22 +8,26 @@
 // Just noticed another sketch on github, https://gist.github.com/anteo/0e5d8867df7568a6523d54e19983d8e0
 // At a guess, looks like the PCBWAY's version by Roman Kubat is based of this github version by Anton Argirov.
 
+//TODO ... SD CARD WIH NO MUSIC
+
 #include <SPI.h>
 #include "SdFat.h"
 #include "SSD1306Ascii.h"
 #include "SSD1306AsciiAvrI2c.h"
 #include "fudgefont.h"  // Based on the Adafruit5x7 font, with '!' to '(' changed to work as a VU BAR (8 chars)
 
+#define VERSION ("1.1")
+
 // *********************************************************************
 // *********************************************************************
 // *********************************************************************
 // Pick one of thse two options for the BUFFER_SIZE to match the ATmega 
 // you are compiling for
-//
+// 
 // OPTION 1:
-#define BUFFER_SIZE (256)  // ATmega328(2K) allows optimised counters
+//#define BUFFER_SIZE (256)  // ATmega328(2K) allows optimised counters
 // OPTION 2:
-//#define BUFFER_SIZE (64)  // ATmega168(1K) code uses a smaller buffer 
+#define BUFFER_SIZE (64)  // ATmega168(1K) code uses a smaller buffer 
 // ********************************************************************
 // ********************************************************************
 // ********************************************************************
@@ -62,15 +66,22 @@ enum AYMode { INACTIVE, WRITE, LATCH };
 
 // Arduino (Atmega) pins default to INPUT (high-impedance state)
 enum {
-  pinReset = 2,   // AY38910 reset
-  pinClock,       // AY38910 clock
-  pinSHCP,        // 74HC595 clock
-  pinSTCP,        // 74HC595 latch
-  pinDS,          // 74HC595 data
-  pinNextButton,  // advance to next tune
-  pinBC1,         // AY38910 BC1
-  pinBDIR,        // AY38910 BDIR
-  pinCS           // SD card select (CS)
+  pinResetAY = 2,   //2 AY38910 reset
+  pinClockAY,       //3 AY38910 clock - interrupt driven
+  pinSHCP,        //4 74HC595 clock
+  pinSTCP,        //5 74HC595 latch
+  pinDS,          //6 74HC595 data
+  pinNextButton,  //7 advance to next tune
+  pinBC1,         //8 AY38910 BC1
+  pinBDIR,        //9 AY38910 BDIR
+  pinCS           //10 SD card select (CS)
+
+  //11 MOSI (SD card)  
+  //12 MISO (SD card)
+  //13 SCK  (SD card)
+
+  //pin18 SDA=A4 ,   i2c OLED 
+  //pin19 SCL=A5
 };
 
 // AY/PSG Registers 
@@ -137,15 +148,17 @@ void setup() {
   
   oled.begin(&Adafruit128x32, I2C_ADDRESS);
   oled.setFont( fudged_Adafruit5x7 ); // original Adafruit5x7 font with tweeks at start for VU meter
+  oled.clear();
+  oled.print(F("ver"));
+  oled.println(F(VERSION));
 
   SD_CARD_MISSING_RETRY:
-  oled.clear();
+  delay(1000*2);
   // The SD card reader must keep up with the logic process (both run at 50MHz)
   if (m_sd.begin(pinCS, SD_SCK_MHZ(50))) {
     countPlayableFiles();
   } else {
-    oled.print(F("Waiting for SD card"));
-    delay(1000*2);
+    oled.println(F("Waiting for SD card"));
     goto SD_CARD_MISSING_RETRY; 
   }
 
@@ -204,10 +217,10 @@ void loop() {
 
 // Configure the direction of the digital pins. (pins default to INPUT at power up)
 void setupPins() {  
-  pinMode(pinReset, OUTPUT);
-  pinMode(pinClock, OUTPUT);
-  pinMode(pinSHCP, OUTPUT);
-  pinMode(pinSTCP, OUTPUT);
+  pinMode(pinResetAY, OUTPUT);
+  pinMode(pinClockAY, OUTPUT);
+  pinMode(pinSHCP, OUTPUT); // clock
+  pinMode(pinSTCP, OUTPUT); // latch
   pinMode(pinDS, OUTPUT);
   // A push button switch is connected between 'pinNextButton' & ground, 
   // without the need for any resistor as reference to 5V thanks to the internal pull-up. Nice.
@@ -218,7 +231,11 @@ void setupPins() {
 }
 
 // The AY38910 clock pin needs to be driven at a frequency of 1.75 MHz.
-// We can get an interrupt to trigger at 1.778 MHz ( 1.5873% difference, close enough)
+// We can get an interrupt to trigger at (16/9) 1.778 MHz ( 1.5873% difference, close enough)
+//
+// Noting that the ZX Spectrum's 128K's AY soundchip is fed with a 1.7734MHz clock  (CPU clock: 3.5469/2=1.77345)
+// This player is mostly aimed at PSG files coming from he speccy
+// 
 #define PERIOD  (9)                 // 9 CPU cycles (or 1.778 MHz)
 void setupClockForAYChip() {
   TCCR2B = 0;                       // stop timer
@@ -231,7 +248,7 @@ void setupClockForAYChip() {
 }
 
 // Clear Timer on Compare 
-// Interrupt on "Timer/Counter1 Compare Match A"
+// Interrupt on "Timer/Counter1 Compare Match A" (see ISR function)
 // 16000000 (ATmega16MHz) / 256 prescaler = 62500ms , 62500ms / 1250 counts = 50ms
 // 1000ms / 50ms = 20ms
 void setupProcessLogicTimer() {
@@ -301,9 +318,8 @@ void cacheSingleByteRead() {
   ADVANCE_LOAD_BUFFER
 }
 
-// Bypass header information, we can't make use of the extra playback features.
-//
-// Example of Header(16 bytes) followed by thee start of the raw byte data
+// Skip header information
+// Example of Header(16 bytes) followed by the start of the raw byte data
 // HEADER: 50 53 47 1A 00 00 00 00 00 00 00 00 00 00 00 00 
 // DATA  : FF FF 00 F9 06 16 07 38 FF 00 69 06 17 FF 00 F9 ...
 //         ^^ ^^
@@ -326,9 +342,9 @@ void advancePastHeader() {
 // Reset pulse width must be 500ns (min), this comes from the AY38910/12 datasheet.
 void resetAY() {
   setAYMode(INACTIVE);
-  digitalWrite(pinReset, LOW); // just assume it starts high - we only care about the low edges
+  digitalWrite(pinResetAY, LOW); // just assume it starts high - we only care about the low edges
   delay(1);  // to be safe
-  digitalWrite(pinReset, HIGH);
+  digitalWrite(pinResetAY, HIGH);
   //delay(1);
 }
 
@@ -362,17 +378,23 @@ void setAYMode(AYMode mode) {
 // Amplitude Control             R8 to R10       Select "fixed" or "envelope-variable" amplitudes
 // Envelope Generator Control    R11 to R13      Program envelope period and select envelope pattern
 //-------------------------------------------------------------------------------------------------
-// Update VU meter & send latching data via 74HC595 to AY chip
+// Send latching data via 74HC595 to AY chip + Update VU meter  
 // (74HC595 used as limited amount of pins available on a Arduino pro mini)
 // NOTE: *** Used by interrupt, keep code lightweight ***
 void writeAY( byte port , byte control ) {
   if (port < PSG_REG_TOTAL) {    
-    //setAYMode(INACTIVE);      // will already be inactive at ths point ( here after init or this call)
-    latchOutput(port);          // Send reg addess to the 74HC595
+  
     setAYMode(LATCH);           // latch AY reg address with 74HC595
+    latchOutput(port);          // Send reg addess to the 74HC595
+    
     setAYMode(INACTIVE);
+
+    setAYMode(WRITE);           // Signal a write 
     latchOutput(control);       // Send control register to the 74HC595
-    setAYMode(WRITE);           // Signal a write
+
+    // ABOVE - BUG..MAYBE FIXED ... now latching first for both port and control data
+    // need to look into this to understand hardware side bit more
+ 
     switch (port) {
       case PSG_REG_LVL_A: volumeChannelA = control*VU_METER_INTERNAL_SCALE; break;   // *2 for scaled maths (VU meter speed)
       case PSG_REG_LVL_B: volumeChannelB = control*VU_METER_INTERNAL_SCALE; break;
@@ -408,7 +430,7 @@ void playNotes() {
             ADVANCE_PLAY_BUFFER
             
             if ((b==0xff) && (fileSize/32==0) )  {
-                // Some tunes have ver long pauses at the end (caused by repeated sequences of "0xfe 0xff").
+                // Some tunes have very long pauses at the end (caused by repeated sequences of "0xfe 0xff").
                 // For example "NewZealandStoryThe.psg" has a very long pause at the end, I'm guessing by design to handover to the ingame tune.
                interruptCountSkip=4;  // 4 works well for me! Forcing shorter pauses, but only when nearing the end of the tune and its FF
                resetAY();  
