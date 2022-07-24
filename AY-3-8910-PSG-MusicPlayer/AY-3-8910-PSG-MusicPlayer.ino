@@ -494,7 +494,12 @@ ISR(TIMER1_COMPA_vect) {
   }
 
   bitSet(playFlag,FLAG_REFRESH_DISPLAY);  // notify main loop to refresh the display (keeping slow things away/outside from the interrupt)
-  playNotes();
+
+  if (interruptCountSkip>0){
+     interruptCountSkip--;
+  }else{
+    playNotes();
+  }
 }
 
 // Q: Why top and bottom functions?
