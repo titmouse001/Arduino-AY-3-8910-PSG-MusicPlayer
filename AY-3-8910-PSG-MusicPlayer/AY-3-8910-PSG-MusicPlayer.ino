@@ -25,15 +25,14 @@
 // you are compiling for
 // 
 // OPTION 1:
-//#define BUFFER_SIZE (256)  // ATmega328(2K) allows optimised counters
+#define BUFFER_SIZE (256)  // ATmega328(2K) allows optimised counters
 // OPTION 2:
-#define BUFFER_SIZE (64)  // ATmega168(1K) code uses a smaller buffer 
+//#define BUFFER_SIZE (64)  // ATmega168(1K) code uses a smaller buffer 
 // ********************************************************************
 // ********************************************************************
 // ********************************************************************
 
-byte playBuf[BUFFER_SIZE];  // PICK ONE OF THE ABOVE BUFFER SIZES
-
+byte playBuf[BUFFER_SIZE];
 
 //*** Compiler results for a ATmega168 ("cut down" pro mini with JUST 1k, Atmega238P has 2k) ***
 //Sketch uses 12602 bytes (87%) of program storage space. Maximum is 14336 bytes.
@@ -125,8 +124,8 @@ byte playFlag;
  
 #define VU_METER_INTERNAL_SCALE (2)  // speed scale 2^n values
 
-int filesCount = 0;
-int fileIndex = 0;  // file indexes start from zero
+uint16_t filesCount = 0;
+uint16_t fileIndex = 0;  // file indexes start from zero
 int interruptCountSkip = 0;   // Don't play new sequences via interrupt when this is positive (do nothing for 20ms)
 uint32_t fileSize;
 
@@ -276,10 +275,10 @@ void countPlayableFiles() {
   }
 }
 
-void selectFile(int fileIndex) {
+void selectFile(uint16_t fileIndex) {
   m_fp.close();  // FUDGE
   m_dir.rewind();  // is always left open, so we just rewind 
-  int k = 0;
+  uint16_t k = 0;
   while (m_fp.openNext(&m_dir, O_READ)) {
     if (m_fp.isFile()) { 
       if (isFilePSG()) {
@@ -421,7 +420,7 @@ void latchOutput(byte value) {
 void playNotes() {
   while (isCacheReady()) {
     byte b = playBuf[circularBufferReadIndex];
-    ADVANCE_PLAY_BUFFER
+    ADVANCE_PLAY_BUFFER    // NOTE: for ALL cases... will need to undo later if cache is not ready.  
     switch(b) {
        case END_OF_INTERRUPT_0xFF: return;
        case END_OF_INTERRUPT_MULTIPLE_0xFE:
@@ -443,8 +442,8 @@ void playNotes() {
             }
             return;
           }else {
-            circularBufferLoadIndex--; // canceling  that last advance
-            circularBufferReadIndex--; // cache not ready, need to wait a bit. Rewinding back to the starting command.
+			      // Can't do the above just yet as the cache is not ready, need to wait a bit.  We need to replay the last while loop command again.
+            circularBufferReadIndex--;
           }
        break;
        case END_OF_MUSIC_0xFD:   bitSet(playFlag,FLAG_PLAY_NEXT_TUNE);  return;
@@ -452,9 +451,9 @@ void playNotes() {
           if (isCacheReady()) {
             writeAY(b, playBuf[circularBufferReadIndex]);
             ADVANCE_PLAY_BUFFER
-          } else {
-            circularBufferLoadIndex--;  // canceling  that last advance
-            circularBufferReadIndex--;  // cache not ready, need to wait a bit. Rewinding back to the starting command.
+          } else {          
+		        // same as above - cache not ready, need to wait a bit. 
+            circularBufferReadIndex--;
           }
        break;
     }
